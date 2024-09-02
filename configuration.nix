@@ -55,8 +55,51 @@ in
   ];
  
   nixpkgs.config.allowUnfree = true;
+
+  nixpkgs.overlays = let
+    apc-extension = builtins.fetchGit {
+      url = https://github.com/drcika/apc-extension.git;
+      rev = "4d7d3b10ee1814880514728bd18ffac143329642";
+    };
+  in [
+    (self: super: {
+      vscode = super.vscode.overrideAttrs (attrs: {
+        postInstall = ''
+          cd $out
+          mkdir apc-extension
+
+          sed '1d' ${apc-extension}/src/patch.ts >> $out/apc-extension/patch.ts
+          sed "s%require.main!.filename%'$out/lib/vscode/resources/app/out/dummy'%g" -i  $out/apc-extension/patch.ts
+          sed "s%vscode.window.showErrorMessage(%throw new Error(installationPath + %g" -i  $out/apc-extension/patch.ts
+          sed "s%promptRestart();%%g" -i  $out/apc-extension/patch.ts
+
+          sed '1d' ${apc-extension}/src/utils.ts > $out/apc-extension/utils.ts
+          ls $out/apc-extension >> log
+
+          echo "import { install } from './patch.ts'; install({ extensionPath: '${apc-extension}' })" > $out/apc-extension/install.ts
+
+          bun apc-extension/install.ts
+        '';
+        buildInputs = attrs.buildInputs ++ [
+          pkgs.bun
+        ];
+      });
+    })
+  ];
+
+
   programs.hyprland.enable = true;
   programs.light.enable = true;
+
+  programs = {
+    bash.interactiveShellInit = ''
+        export TERM=xterm-256color
+    '';
+
+    fish.shellInit = ''
+        set -x TERM xterm-256color
+    '';
+  };
 
   fonts.packages = with pkgs; [
     (nerdfonts.override { 
